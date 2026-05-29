@@ -416,7 +416,7 @@ function renderResult(){
       <div class="restart"><button id="restart">Start over</button></div>
     </div>`;
   // CTA wiring — replace '#' with real Calendly / booking URLs
-  const links={calendar:'https://burhanuddinlaw.com/book-consultation/', call:'https://burhanuddinlaw.com/book-consultation/', resource:'https://burhanuddinlaw.com/book-consultation/'};
+  const links={calendar:'https://burhanuddinlaw.cliogrow.com/book', call:'https://burhanuddinlaw.cliogrow.com/book', resource:'https://burhanuddinlaw.cliogrow.com/book'};
   app.querySelector('#cta').onclick=()=>{ window.location.href=links[cta]; };
   const c2=app.querySelector('#cta2'); if(c2) c2.onclick=()=>{ window.location.href=links.call; };
   app.querySelector('#restart').onclick=()=>{ state={path:null,idx:0,answers:{},score:0,urgent:false}; renderFork(); };
