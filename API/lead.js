@@ -146,7 +146,7 @@ async function sendEmailNotification(lead) {
                 Authorization: `Bearer ${resendKey}`,
         },
         body: JSON.stringify({
-                from: "Strategy Session Funnel <noreply@ineedastrategysession.com>",
+                from: "Strategy Session Funnel <noreply@updates.burhanuddinlaw.com>",
                 to: [notifyEmail],
                 subject: `New Lead: ${lead.name} (${lead.email})`,
                 html,
