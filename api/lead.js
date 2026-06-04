@@ -84,7 +84,7 @@ async function pushToHubSpot(lead) {
   };
 
   const response = await fetch(
-        "https://api.hubapi.com/crm/v3/objects/contacts/upsert",
+        "https://api.hubapi.com/crm/v3/objects/contacts/batch/upsert",
     {
             method: "POST",
             headers: {
