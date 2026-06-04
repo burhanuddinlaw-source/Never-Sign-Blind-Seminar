@@ -1,127 +1,140 @@
 // Vercel Serverless Function — receives a lead from the funnel.
-// Lives at /api/lead because the file is at /API/lead.js.
+// Lives at /api/lead because the file is at /api/lead.js.
 //
 // Integrations:
-//   1. HubSpot CRM  — upserts a Contact using the Private App token in
-//      HUBSPOT_API_TOKEN environment variable.
-//   2. Email alert  — sends an HTML notification to NOTIFY_EMAIL using
-//      the Resend API (RESEND_API_KEY env var).  If RESEND_API_KEY is
-//      absent the lead is still logged to Vercel runtime logs so nothing
-//      is ever silently lost.
+//   1. HubSpot CRM  — creates or updates a Contact.
+//      Uses POST /crm/v3/objects/contacts to create; on 409 (already exists)
+//      it fetches the contact ID by email then PATCHes the existing record.
+//   2. Email alert  — sends an HTML notification to NOTIFY_EMAIL via Resend.
 //
-// Both integrations run in parallel via Promise.allSettled so a failure
-// in one never blocks the other, and the browser always gets 200 OK so
-// the funnel UX is never broken.
+// Both run in parallel via Promise.allSettled so a failure in one never
+// blocks the other, and the browser always gets 200 OK.
 
 export default async function handler(req, res) {
-    if (req.method !== "POST") {
-          return res.status(405).json({ ok: false, error: "Method not allowed" });
-    }
+      if (req.method !== "POST") {
+              return res.status(405).json({ ok: false, error: "Method not allowed" });
+      }
 
   try {
-        const lead = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+          const lead = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
 
-      // Minimal validation — reject obviously empty submissions.
-      if (!lead || !lead.email || !lead.name) {
-              return res.status(400).json({ ok: false, error: "Missing name or email" });
-      }
+        if (!lead || !lead.email || !lead.name) {
+                  return res.status(400).json({ ok: false, error: "Missing name or email" });
+        }
 
-      // Run HubSpot upsert + email notification concurrently.
-      const [hubspotResult, emailResult] = await Promise.allSettled([
-              pushToHubSpot(lead),
-              sendEmailNotification(lead),
-            ]);
+        const [hubspotResult, emailResult] = await Promise.allSettled([
+                  pushToHubSpot(lead),
+                            sendEmailNotification(lead),
+                ]);
 
-      // Log outcomes server-side (visible in Vercel Function Logs).
-      if (hubspotResult.status === "rejected") {
-              console.error("[lead] HubSpot error:", hubspotResult.reason);
-      } else {
-              console.log("[lead] HubSpot OK:", hubspotResult.value);
-      }
+        if (hubspotResult.status === "rejected") {
+                  console.error("[lead] HubSpot error:", hubspotResult.reason);
+        } else {
+                  console.log("[lead] HubSpot OK:", hubspotResult.value);
+        }
 
-      if (emailResult.status === "rejected") {
-              console.error("[lead] Email error:", emailResult.reason);
-      } else {
-              console.log("[lead] Email OK:", emailResult.value);
-      }
+        if (emailResult.status === "rejected") {
+                  console.error("[lead] Email error:", emailResult.reason);
+        } else {
+                  console.log("[lead] Email OK:", emailResult.value);
+        }
 
-      // Always return 200 so the funnel redirects the user normally.
-      return res.status(200).json({ ok: true });
+        return res.status(200).json({ ok: true });
   } catch (err) {
-        console.error("[lead] Unexpected error:", err);
-        // Still return 200 — never break the funnel UX on backend errors.
-      return res.status(200).json({ ok: true });
+          console.error("[lead] Unexpected error:", err);
+          return res.status(200).json({ ok: true });
   }
 }
 
 // ---------------------------------------------------------------------------
-// HubSpot — upsert Contact by email
+// HubSpot — create contact, fall back to PATCH on 409 conflict
 // ---------------------------------------------------------------------------
 async function pushToHubSpot(lead) {
-    const token = process.env.HUBSPOT_API_TOKEN;
-    if (!token) throw new Error("HUBSPOT_API_TOKEN is not set");
+      const token = process.env.HUBSPOT_API_TOKEN;
+      if (!token) throw new Error("HUBSPOT_API_TOKEN is not set");
 
   const properties = {
-        email: lead.email,
-        firstname: (lead.name || "").split(" ")[0] || "",
-        lastname: (lead.name || "").split(" ").slice(1).join(" ") || "",
-        phone: lead.phone || "",
+          email: lead.email,
+          firstname: (lead.name || "").split(" ")[0] || "",
+          lastname: (lead.name || "").split(" ").slice(1).join(" ") || "",
+          phone: lead.phone || "",
   };
 
-  // Attach any extra quiz fields that the funnel sends through.
   if (lead.answers) properties.lead_answers = JSON.stringify(lead.answers);
-    if (lead.path)    properties.lead_path    = lead.path;
-    if (lead.tier)    properties.lead_tier    = String(lead.tier);
-    if (lead.score !== undefined) properties.lead_score = String(lead.score);
+      if (lead.path)    properties.lead_path    = lead.path;
+      if (lead.tier)    properties.lead_tier    = String(lead.tier);
+      if (lead.score !== undefined) properties.lead_score = String(lead.score);
 
-  const body = {
-        inputs: [
-          {
-                    idProperty: "email",
-                    properties,
-          },
-              ],
+  const headers = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
   };
 
-  const response = await fetch(
-        "https://api.hubapi.com/crm/v3/objects/contacts/batch/upsert",
-    {
-            method: "POST",
-            headers: {
-                      "Content-Type": "application/json",
-                      Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify(body),
-    }
-      );
+  // Step 1: try to CREATE the contact
+  const createResp = await fetch(
+          "https://api.hubapi.com/crm/v3/objects/contacts",
+      {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ properties }),
+      }
+        );
 
-  if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`HubSpot ${response.status}: ${text}`);
+  if (createResp.ok) {
+          const json = await createResp.json();
+          return json.id ?? "created";
   }
 
-  const json = await response.json();
-    return json.results?.[0]?.id ?? "upserted";
+  // Step 2: if 409 (contact already exists), look up by email then PATCH
+  if (createResp.status === 409) {
+          const searchResp = await fetch(
+                    `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(lead.email)}?idProperty=email`,
+              { headers: { Authorization: `Bearer ${token}` } }
+                  );
+          if (!searchResp.ok) {
+                    const t = await searchResp.text();
+                    throw new Error(`HubSpot lookup ${searchResp.status}: ${t}`);
+          }
+          const existing = await searchResp.json();
+          const contactId = existing.id;
+
+        const patchResp = await fetch(
+                  `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`,
+            {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify({ properties }),
+            }
+                );
+          if (!patchResp.ok) {
+                    const t = await patchResp.text();
+                    throw new Error(`HubSpot PATCH ${patchResp.status}: ${t}`);
+          }
+          return contactId;
+  }
+
+  // Any other error
+  const text = await createResp.text();
+      throw new Error(`HubSpot ${createResp.status}: ${text}`);
 }
 
 // ---------------------------------------------------------------------------
 // Email notification via Resend
 // ---------------------------------------------------------------------------
 async function sendEmailNotification(lead) {
-    const resendKey = process.env.RESEND_API_KEY;
-    const notifyEmail = process.env.NOTIFY_EMAIL || "ally@burhanuddinlaw.com";
+      const resendKey = process.env.RESEND_API_KEY;
+      const notifyEmail = process.env.NOTIFY_EMAIL || "ally@burhanuddinlaw.com";
 
   if (!resendKey) {
-        // Graceful degradation: log the lead so it is never silently lost.
-      console.log("[lead] RESEND_API_KEY not set — lead data:", JSON.stringify(lead));
-        return "logged-only";
+          console.log("[lead] RESEND_API_KEY not set — lead data:", JSON.stringify(lead));
+          return "logged-only";
   }
 
   const answersHtml = lead.answers
-      ? Object.entries(lead.answers)
-            .map(([k, v]) => `<tr><td style="padding:4px 8px;font-weight:bold">${k}</td><td style="padding:4px 8px">${v}</td></tr>`)
-            .join("")
-        : "<tr><td colspan='2'>No quiz answers captured</td></tr>";
+        ? Object.entries(lead.answers)
+              .map(([k, v]) => `<tr><td style="padding:4px 8px;font-weight:bold">${k}</td><td style="padding:4px 8px">${v}</td></tr>`)
+              .join("")
+          : "<tr><td colspan='2'>No quiz answers captured</td></tr>";
 
   const html = `
   <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
@@ -140,24 +153,24 @@ async function sendEmailNotification(lead) {
                                       </div>`;
 
   const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${resendKey}`,
-        },
-        body: JSON.stringify({
-                from: "Strategy Session Funnel <noreply@updates.burhanuddinlaw.com>",
-                to: [notifyEmail],
-                subject: `New Lead: ${lead.name} (${lead.email})`,
-                html,
-        }),
+          method: "POST",
+          headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${resendKey}`,
+          },
+          body: JSON.stringify({
+                    from: "Strategy Session Funnel <noreply@updates.burhanuddinlaw.com>",
+                    to: [notifyEmail],
+                    subject: `New Lead: ${lead.name} (${lead.email})`,
+                    html,
+          }),
   });
 
   if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`Resend ${response.status}: ${text}`);
+          const text = await response.text();
+          throw new Error(`Resend ${response.status}: ${text}`);
   }
 
   const json = await response.json();
-    return json.id ?? "sent";
+      return json.id ?? "sent";
 }
