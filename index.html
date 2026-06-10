@@ -203,7 +203,52 @@ const FLOWS = {
         options:[ {v:"yes", l:"Yes", s:2}, {v:"no", l:"No", s:1} ]}
     ]
   }
-};
+,
+  ai_advantage: {
+    name: "The AI Advantage",
+    questions: [
+      { id:"role", q:"What best describes your role?", sub:"This helps us tailor the session to where you sit in the business.",
+        options:[
+          {v:"owner", l:"I own or co-own the business", s:3},
+          {v:"exec", l:"I'm a C-suite or senior executive", s:3},
+          {v:"ops", l:"I lead operations or a key department", s:2},
+          {v:"other", l:"Something else", s:1}
+        ]
+      },
+      { id:"stage", q:"Where is your business with AI right now?", sub:"Be honest — there's no wrong answer.",
+        options:[
+          {v:"none", l:"We haven't started yet — not sure where to begin", s:3},
+          {v:"tools", l:"We've tried a few tools but nothing sticking yet", s:3},
+          {v:"partial", l:"We have some AI in use but it's not strategic", s:2},
+          {v:"advanced", l:"We have a plan — looking to sharpen it", s:2}
+        ]
+      },
+      { id:"goal", q:"What's the biggest thing you want AI to do for your business?", sub:"Pick the one that feels most urgent.",
+        options:[
+          {v:"time", l:"Save time and cut out repetitive work", s:3},
+          {v:"decisions", l:"Make faster, smarter business decisions", s:3},
+          {v:"compete", l:"Stay competitive before competitors get there first", s:3},
+          {v:"costs", l:"Reduce headcount or operating costs", s:2}
+        ]
+      },
+      { id:"size", q:"How large is your team?", sub:"Roughly.",
+        options:[
+          {v:"solo", l:"Just me or a small team (under 10)", s:2},
+          {v:"small", l:"10 to 50 people", s:3},
+          {v:"mid", l:"50 to 250 people", s:3},
+          {v:"large", l:"Over 250 people", s:2}
+        ]
+      },
+      { id:"blocker", q:"What's holding you back from moving on AI right now?", sub:"Pick your biggest barrier.",
+        options:[
+          {v:"knowledge", l:"I don't know where to start or what to prioritize", s:3},
+          {v:"risk", l:"I'm worried about legal risk, data security, or compliance", s:3},
+          {v:"buyin", l:"I need to get buy-in from partners or leadership", s:2},
+          {v:"budget", l:"Budget or resources are the constraint", s:1}
+        ]
+      }
+    ]
+  }};
 
 const LABELS = { /* human-readable answer values for the summary */ };
 Object.values(FLOWS).forEach(f=>f.questions.forEach(qq=>qq.options.forEach(o=>LABELS[o.v]=o.l)));
@@ -244,6 +289,12 @@ function renderFork(){
           <h3>I'm growing and need a lawyer in my corner</h3>
           <p>You're scaling and tired of signing things blind or paying by the question.</p>
           <div class="go">Start &rarr;</div>
+        </button>
+        <button class="path" data-path="ai_advantage">
+          <div class="ic">${ICON_ai}</div>
+          <h3>I want to build an AI advantage</h3>
+          <p>You know AI is reshaping business — and you want a clear, practical strategy before your competitors move first.</p>
+          <div class="go">Start →</div>
         </button>
       </div>
     </div>`;
@@ -429,6 +480,7 @@ function toggleBad(id,bad){document.getElementById(id).classList.toggle('bad',ba
 /* icons */
 const ICON_shield='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0C5B56" stroke-width="1.8"><path d="M12 3l7 3v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>';
 const ICON_grow='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0C5B56" stroke-width="1.8"><path d="M4 18l5-5 3 3 7-7M21 9V3h-6"/></svg>';
+const ICON_ai = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0C5B56" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/></svg>`;
 const CHECK='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l4 4 10-11"/></svg>';
 
 renderFork();
